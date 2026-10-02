@@ -1,0 +1,410 @@
+// ChargeOne — production database schema (PostgreSQL + Prisma)
+// The competition prototype runs on an in-memory store seeded with the same shapes;
+// this schema is the production target.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  OPERATOR
+  ADMIN
+}
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum ChargerStatus {
+  AVAILABLE
+  OCCUPIED
+  CHARGING
+  FAULT
+  OFFLINE
+  MAINTENANCE
+}
+
+enum ConnectorType {
+  CCS2
+  TYPE2
+  CHADEMO
+}
+
+enum BookingStatus {
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+  EXPIRED
+}
+
+enum SessionStatus {
+  STARTING
+  CHARGING
+  COMPLETED
+  INTERRUPTED
+  FAILED
+}
+
+enum PaymentState {
+  CREATED
+  INITIATED
+  AUTHORIZED
+  CHARGER_CHECK
+  STARTED
+  CHARGING
+  COMPLETED
+  SETTLED
+  FAILED
+  REFUND_PENDING
+  REFUND_PROCESSING
+  REFUNDED
+}
+
+enum RefundStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  REJECTED
+}
+
+enum RefundType {
+  FULL_REVERSAL
+  PARTIAL_RELEASE
+  MANUAL_REVIEW
+}
+
+enum ReportStatus {
+  UNDER_VERIFICATION
+  ASSIGNED_TO_OPERATOR
+  RESOLVED
+  DISMISSED
+}
+
+model User {
+  id            String        @id @default(cuid())
+  name          String
+  email         String        @unique
+  phone         String?
+  passwordHash  String
+  role          Role          @default(USER)
+  status        AccountStatus @default(ACTIVE)
+  city          String?
+  walletBalance Decimal       @default(0) @db.Decimal(10, 2)
+  operatorId    String?
+  operator      Operator?     @relation(fields: [operatorId], references: [id])
+  vehicles      Vehicle[]
+  bookings      Booking[]
+  sessions      ChargingSession[]
+  payments      Payment[]
+  refunds       Refund[]
+  faultReports  FaultReport[]
+  tickets       SupportTicket[]
+  notifications Notification[]
+  reviews       Review[]
+  favorites     Favorite[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@map("users")
+}
+
+model Vehicle {
+  id          String        @id @default(cuid())
+  userId      String
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  brand       String
+  model       String
+  batteryKwh  Decimal       @db.Decimal(6, 2)
+  connector   ConnectorType
+  batteryPct  Int           @default(50)
+  rangeKm     Int
+  fullRangeKm Int
+  isPrimary   Boolean       @default(false)
+  createdAt   DateTime      @default(now())
+
+  @@map("vehicles")
+}
+
+model Operator {
+  id        String        @id @default(cuid())
+  name      String
+  code      String        @unique
+  status    AccountStatus @default(ACTIVE)
+  color     String?
+  stations  Station[]
+  users     User[]
+  createdAt DateTime      @default(now())
+
+  @@map("operators")
+}
+
+model Station {
+  id           String    @id @default(cuid())
+  operatorId   String
+  operator     Operator  @relation(fields: [operatorId], references: [id])
+  name         String
+  city         String
+  address      String
+  lat          Float
+  lng          Float
+  openHours    String    @default("24x7")
+  facilities   String[]
+  verified     Boolean   @default(false)
+  rating       Decimal   @default(0) @db.Decimal(2, 1)
+  chargers     Charger[]
+  reviews      Review[]
+  favorites    Favorite[]
+  faultReports FaultReport[]
+  createdAt    DateTime  @default(now())
+
+  @@index([city])
+  @@index([lat, lng])
+  @@map("stations")
+}
+
+model Charger {
+  id         String        @id @default(cuid())
+  stationId  String
+  station    Station       @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  code       String
+  powerKw    Decimal       @db.Decimal(6, 2)
+  status     ChargerStatus @default(OFFLINE)
+  health     Int           @default(0) // computed reliability score 0-100
+  connectors Connector[]
+  statusLog  ChargerStatusLog[]
+  bookings   Booking[]
+  sessions   ChargingSession[]
+  pricing    Pricing?
+  createdAt  DateTime      @default(now())
+
+  @@unique([stationId, code])
+  @@map("chargers")
+}
+
+model Connector {
+  id        String        @id @default(cuid())
+  chargerId String
+  charger   Charger       @relation(fields: [chargerId], references: [id], onDelete: Cascade)
+  type      ConnectorType
+  maxAmps   Int?
+
+  @@map("connectors")
+}
+
+// Telemetry snapshots from OCPP / MQTT / ESP32 nodes
+model ChargerStatusLog {
+  id          String        @id @default(cuid())
+  chargerId   String
+  charger     Charger       @relation(fields: [chargerId], references: [id], onDelete: Cascade)
+  status      ChargerStatus
+  voltage     Float?
+  current     Float?
+  powerKw     Float?
+  energyKwh   Float?
+  temperature Float?
+  faultCode   String?
+  source      String        @default("telemetry") // telemetry | ESP32 | operator | system
+  at          DateTime      @default(now())
+
+  @@index([chargerId, at])
+  @@map("charger_status")
+}
+
+model Booking {
+  id          String        @id @default(cuid())
+  reference   String        @unique // CO-BKG-xxxxx
+  userId      String
+  user        User          @relation(fields: [userId], references: [id])
+  chargerId   String
+  charger     Charger       @relation(fields: [chargerId], references: [id])
+  date        DateTime
+  startTime   String
+  durationMin Int
+  status      BookingStatus @default(CONFIRMED)
+  createdAt   DateTime      @default(now())
+
+  @@map("bookings")
+}
+
+model ChargingSession {
+  id              String        @id @default(cuid())
+  reference       String        @unique // CS_xxxxxx
+  userId          String
+  user            User          @relation(fields: [userId], references: [id])
+  chargerId       String
+  charger         Charger       @relation(fields: [chargerId], references: [id])
+  connector       ConnectorType
+  startTime       DateTime
+  endTime         DateTime?
+  energyKwh       Decimal       @default(0) @db.Decimal(8, 3)
+  pricePerKwh     Decimal       @db.Decimal(6, 2)
+  estimatedAmount Decimal       @db.Decimal(10, 2)
+  finalAmount     Decimal       @default(0) @db.Decimal(10, 2)
+  startPct        Int?
+  endPct          Int?
+  status          SessionStatus @default(STARTING)
+  payment         Payment?
+
+  @@index([userId, startTime])
+  @@map("charging_sessions")
+}
+
+model Payment {
+  id               String       @id @default(cuid())
+  reference        String       @unique // CO-2026-xxxxxx
+  userId           String
+  user             User         @relation(fields: [userId], references: [id])
+  sessionId        String?      @unique
+  session          ChargingSession? @relation(fields: [sessionId], references: [id])
+  provider         String       // e.g. razorpay
+  providerOrderId  String?      // provider order/intent id — never store card data
+  method           String?
+  amountAuthorized Decimal      @db.Decimal(10, 2)
+  amountFinal      Decimal      @default(0) @db.Decimal(10, 2)
+  amountReleased   Decimal      @default(0) @db.Decimal(10, 2)
+  taxes            Decimal      @default(0) @db.Decimal(10, 2)
+  state            PaymentState @default(CREATED)
+  transitions      Transaction[]
+  refunds          Refund[]
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@index([userId, createdAt])
+  @@map("payments")
+}
+
+// Every payment state transition (the audit trail of money)
+model Transaction {
+  id        String       @id @default(cuid())
+  paymentId String
+  payment   Payment      @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  fromState PaymentState?
+  toState   PaymentState
+  note      String?
+  at        DateTime     @default(now())
+
+  @@index([paymentId, at])
+  @@map("transactions")
+}
+
+model Refund {
+  id                String       @id @default(cuid())
+  reference         String       @unique // CO-RF-xxxxx
+  paymentId         String
+  payment           Payment      @relation(fields: [paymentId], references: [id])
+  userId            String
+  user              User         @relation(fields: [userId], references: [id])
+  amount            Decimal      @db.Decimal(10, 2)
+  reason            String
+  type              RefundType
+  status            RefundStatus @default(PENDING)
+  providerRefundId  String?
+  timeline          Json         // ordered workflow steps with done/at
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  @@map("refunds")
+}
+
+model FaultReport {
+  id          String       @id @default(cuid())
+  reference   String       @unique // CO-xxxxx
+  userId      String
+  user        User         @relation(fields: [userId], references: [id])
+  stationId   String
+  station     Station      @relation(fields: [stationId], references: [id])
+  chargerId   String?
+  issue       String
+  description String?
+  photoUrl    String?
+  status      ReportStatus @default(UNDER_VERIFICATION)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@map("fault_reports")
+}
+
+model SupportTicket {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  subject   String
+  body      String
+  status    String   @default("OPEN")
+  createdAt DateTime @default(now())
+
+  @@map("support_tickets")
+}
+
+model Notification {
+  id     String   @id @default(cuid())
+  userId String
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title  String
+  body   String
+  type   String   @default("info")
+  read   Boolean  @default(false)
+  at     DateTime @default(now())
+
+  @@index([userId, at])
+  @@map("notifications")
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  stationId String
+  station   Station  @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  rating    Int
+  text      String?
+  createdAt DateTime @default(now())
+
+  @@map("reviews")
+}
+
+model Favorite {
+  userId    String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stationId String
+  station   Station @relation(fields: [stationId], references: [id], onDelete: Cascade)
+
+  @@id([userId, stationId])
+  @@map("favorites")
+}
+
+model Pricing {
+  id          String   @id @default(cuid())
+  chargerId   String   @unique
+  charger     Charger  @relation(fields: [chargerId], references: [id], onDelete: Cascade)
+  pricePerKwh Decimal  @db.Decimal(6, 2)
+  peakSurcharge Decimal @default(0) @db.Decimal(6, 2)
+  idleFeePerMin Decimal @default(0) @db.Decimal(6, 2)
+  currency    String   @default("INR")
+  updatedAt   DateTime @updatedAt
+
+  @@map("pricing")
+}
+
+// Global audit log — every meaningful entity transition on the platform
+model AuditLog {
+  id         String   @id @default(cuid())
+  entityType String   // PAYMENT | CHARGER | REFUND | USER | BOOKING | IOT | ...
+  entityId   String
+  fromState  String?
+  toState    String
+  note       String?
+  actor      String   @default("system")
+  at         DateTime @default(now())
+
+  @@index([entityType, entityId, at])
+  @@map("audit_logs")
+}
