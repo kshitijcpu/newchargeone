@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import http from 'http';
@@ -6,7 +7,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { db, nextId, audit, notify, publicStation } from './data/store.js';
 import * as engine from './services/engine.js';
-import { hydrate, idempotency, ledgerStats, ledgerTail, save, commit } from './services/persistence.js';
+import { initPersistence, idempotency, ledgerStats, ledgerTail, save, commit } from './services/persistence.js';
 import { attachOcpp, connections as ocppConnections } from './services/ocpp.js';
 import { ocpiRouter, peers as ocpiPeers, startOcpiSyncLoop } from './services/ocpi.js';
 import { providerInfo, createOrder, verifyWebhookSignature, verifyPaymentSignature } from './services/provider.js';
@@ -30,9 +31,8 @@ app.use((req, res, next) => {
 });
 
 const hash = (pw) => crypto.createHash('sha256').update('co-salt::' + pw).digest('hex');
-db.users.forEach(u => { u.passwordHash = hash(u.password); delete u.password; });
-const restored = hydrate(db);
-console.log(`💾 Persistence: restored ${restored} entities from SQLite (${ledgerStats().engine})`);
+db.users.forEach(u => { if (u.password) { u.passwordHash = hash(u.password); delete u.password; } });
+await initPersistence(db);
 
 const sign = (u) => jwt.sign({ id: u.id, role: u.role, operatorId: u.operatorId || null }, JWT_SECRET, { expiresIn: '12h' });
 const authRequired = (roles) => (req, res, next) => {
@@ -498,6 +498,7 @@ app.post('/api/admin/users/:id/toggle', authRequired(['ADMIN']), (req, res) => {
   if (!u) return res.status(404).json({ error: 'User not found' });
   u.status = u.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE';
   audit('USER', u.id, null, u.status, `Status changed by admin`, req.user.id);
+  save('users', u);
   res.json({ user: safeUser(u) });
 });
 app.get('/api/admin/operators', authRequired(['ADMIN']), (req, res) => {
@@ -512,6 +513,7 @@ app.post('/api/admin/operators/:id/toggle', authRequired(['ADMIN']), (req, res) 
   if (!o) return res.status(404).json({ error: 'Operator not found' });
   o.status = o.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE';
   audit('OPERATOR', o.id, null, o.status, 'Status changed by admin', req.user.id);
+  save('operators', o);
   res.json({ operator: o });
 });
 app.get('/api/admin/payments', authRequired(['ADMIN']), (req, res) => {

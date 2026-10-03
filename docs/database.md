@@ -63,10 +63,16 @@ support_tickets, notifications, reviews, pricing, audit_logs`
 }
 ```
 
-## Prototype note
-The competition build runs the identical shapes on an in-memory store
-(`backend/data/seed.js`) — 6 operators, 29 stations across Mumbai, Navi
-Mumbai, Thane, Pune, Bengaluru, Delhi, Hyderabad, ~130 chargers, historic
-sessions/payments/refunds and audit trails — so the full product works with
-zero external dependencies. Swapping to PostgreSQL is a repository-layer
-change; routes and UI are unaffected.
+## Cloud Database Support (MongoDB Atlas)
+ChargeOne now features real-time **MongoDB Atlas Cloud Database** support. All 17 entity collections (`operators`, `stations`, `chargers`, `users`, `vehicles`, `sessions`, `payments`, `refunds`, `notifications`, `walletTxns`, `faultReports`, `disputes`, `bookings`, `favorites`, `reviews`, `auditLogs`, `incidents`), as well as an append-only `ledger` and `idempotency` collection, are stored and synchronized directly in the cloud.
+
+### Connection & Commands
+```bash
+# Verify MongoDB Atlas connectivity
+npm run db:verify
+
+# Seed or reset MongoDB Atlas collections
+npm run db:seed
+npm run db:seed -- --reset
+```
+When `MONGODB_URI` is configured in `.env`, the platform automatically connects to MongoDB Atlas at boot, seeds any empty collections, and hydrates active application state from the cloud database. If disconnected, it safely falls back to local SQLite.

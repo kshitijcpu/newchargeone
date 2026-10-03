@@ -4,13 +4,17 @@
   "type": "module",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "db:seed": "node tools/seed_mongo.js",
+    "db:verify": "node tools/verify_mongo.js"
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",
     "cors": "^2.8.5",
+    "dotenv": "^18.0.5",
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
+    "mongodb": "^6.21.0",
     "socket.io": "^4.7.5",
     "ws": "^8.22.0"
   }

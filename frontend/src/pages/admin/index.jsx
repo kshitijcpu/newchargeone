@@ -550,10 +550,10 @@ export function AdminIntegrations() {
         {/* Persistence */}
         <div className="card p-5">
           <div className="flex items-center justify-between mb-1">
-            <div className="font-bold flex items-center gap-2"><Database className="w-5 h-5 text-primary" /> Durable persistence</div>
-            <Pill ok>ACID</Pill>
+            <div className="font-bold flex items-center gap-2"><Database className="w-5 h-5 text-primary" /> Cloud database persistence</div>
+            <Pill ok={d.persistence.connected !== false}>{d.persistence.connected ? 'ONLINE' : 'ACID'}</Pill>
           </div>
-          <div className="text-xs text-sub mb-4">{d.persistence.engine} · production target: PostgreSQL + Prisma (schema in /prisma)</div>
+          <div className="text-xs text-sub mb-4">{d.persistence.engine}</div>
           <div className="grid grid-cols-2 gap-2 text-center mb-4">
             {[[d.persistence.persistedEntities, 'Persisted entities'], [d.persistence.ledgerEntries, 'Ledger entries (append-only)']].map(([a, b]) => (
               <div key={b} className="rounded-xl bg-card2/60 border border-line py-3"><div className="font-black text-lg text-primary">{a}</div><div className="text-[10px] text-sub uppercase font-semibold">{b}</div></div>
