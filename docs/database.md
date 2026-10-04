@@ -75,4 +75,5 @@ npm run db:verify
 npm run db:seed
 npm run db:seed -- --reset
 ```
-When `MONGODB_URI` is configured in `.env`, the platform automatically connects to MongoDB Atlas at boot, seeds any empty collections, and hydrates active application state from the cloud database. If disconnected, it safely falls back to local SQLite.
+
+When `MONGODB_URI` is configured in `.env`, the platform automatically connects to MongoDB Atlas at boot, seeds any empty collections, and hydrates active application state from the cloud database. All persistent state is stored exclusively in MongoDB.

@@ -45,6 +45,43 @@ export function Login() {
         <div><label className="label">Password</label><input className="input" type="password" required value={pw} onChange={e => setPw(e.target.value)} placeholder="••••••••" /></div>
         {err && <div className="text-sm text-danger bg-danger/10 border border-danger/30 rounded-xl px-3 py-2.5">{err}</div>}
         <button className="btn-primary w-full !py-3" disabled={busy}>{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />} Sign in</button>
+
+        <div className="pt-2">
+          <div className="relative flex py-2 items-center">
+            <div className="flex-grow border-t border-line"></div>
+            <span className="flex-shrink mx-2 text-[10px] uppercase tracking-wider text-sub font-semibold">1-Click Demo Logins</span>
+            <div className="flex-grow border-t border-line"></div>
+          </div>
+          <div className="grid grid-cols-3 gap-2 mt-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => go(null, 'kshitij@demo.in', 'demo123')}
+              className="px-2 py-2.5 rounded-xl bg-card2 hover:bg-primary/10 border border-line hover:border-primary/40 text-xs font-semibold text-ink transition text-center cursor-pointer"
+            >
+              <div className="text-primary font-bold">EV User</div>
+              <div className="text-[10px] text-sub truncate">kshitij@demo.in</div>
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => go(null, 'operator@demo.in', 'demo123')}
+              className="px-2 py-2.5 rounded-xl bg-card2 hover:bg-cyan-400/10 border border-line hover:border-cyan-400/40 text-xs font-semibold text-ink transition text-center cursor-pointer"
+            >
+              <div className="text-cyan-400 font-bold">Operator</div>
+              <div className="text-[10px] text-sub truncate">operator@demo.in</div>
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => go(null, 'admin@demo.in', 'demo123')}
+              className="px-2 py-2.5 rounded-xl bg-card2 hover:bg-warn/10 border border-line hover:border-warn/40 text-xs font-semibold text-ink transition text-center cursor-pointer"
+            >
+              <div className="text-warn font-bold">Admin</div>
+              <div className="text-[10px] text-sub truncate">admin@demo.in</div>
+            </button>
+          </div>
+        </div>
       </form>
 
       <p className="text-sm text-sub text-center mt-6">New to ChargeOne? <Link to="/register" className="text-primary font-semibold">Create an account</Link></p>

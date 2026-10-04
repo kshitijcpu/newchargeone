@@ -551,7 +551,7 @@ export function AdminIntegrations() {
         <div className="card p-5">
           <div className="flex items-center justify-between mb-1">
             <div className="font-bold flex items-center gap-2"><Database className="w-5 h-5 text-primary" /> Cloud database persistence</div>
-            <Pill ok={d.persistence.connected !== false}>{d.persistence.connected ? 'ONLINE' : 'ACID'}</Pill>
+            <Pill ok={Boolean(d.persistence.connected)}>{d.persistence.connected ? 'ONLINE' : 'DISCONNECTED'}</Pill>
           </div>
           <div className="text-xs text-sub mb-4">{d.persistence.engine}</div>
           <div className="grid grid-cols-2 gap-2 text-center mb-4">
@@ -617,7 +617,7 @@ export function AdminAudit() {
           </table>
         </div>
       )}
-      <p className="text-[11px] text-slate-500 mt-3 flex items-center gap-1.5"><FileClock className="w-3.5 h-3.5" /> Entries are written append-only to the SQLite ledger (WAL). Production: WORM object storage export + 7-year retention per RBI payment-data guidelines.</p>
+      <p className="text-[11px] text-slate-500 mt-3 flex items-center gap-1.5"><FileClock className="w-3.5 h-3.5" /> Entries are written append-only to MongoDB Atlas. Production: WORM object storage export + 7-year retention per RBI payment-data guidelines.</p>
     </div>
   );
 }

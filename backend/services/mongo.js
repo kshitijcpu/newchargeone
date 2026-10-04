@@ -7,6 +7,7 @@ const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME || 'chargeone';
 let client = null;
 let db = null;
 let isConnected = false;
+let lastError = null;
 
 // All ChargeOne entity collections
 export const ENTITY_COLLECTIONS = [
@@ -35,15 +36,16 @@ export const ENTITY_COLLECTIONS = [
 export async function connectMongo() {
   if (isConnected && db) return db;
   if (!MONGODB_URI) {
-    console.warn('⚠️ MongoDB URI not configured in environment (MONGODB_URI)');
+    lastError = 'MongoDB URI not configured in environment (MONGODB_URI)';
+    console.error('❌ Failed to connect to MongoDB: MONGODB_URI is not configured in environment');
     return null;
   }
 
   try {
     console.log(`🔌 Connecting to MongoDB Atlas (${MONGODB_URI.replace(/:[^:]*@/, ':****@')})...`);
     client = new MongoClient(MONGODB_URI, {
-      serverSelectionTimeoutMS: 10000,
-      connectTimeoutMS: 15000,
+      serverSelectionTimeoutMS: 8000,
+      connectTimeoutMS: 10000,
       retryWrites: true,
       w: 'majority',
     });
@@ -52,13 +54,16 @@ export async function connectMongo() {
     db = client.db(MONGODB_DB_NAME);
     await db.command({ ping: 1 });
     isConnected = true;
+    lastError = null;
     console.log(`✅ Connected to MongoDB Atlas! Database: "${MONGODB_DB_NAME}"`);
 
     await initIndexes();
     return db;
   } catch (err) {
     isConnected = false;
-    console.error('❌ Failed to connect to MongoDB Atlas:', err.message);
+    db = null;
+    lastError = err.message;
+    console.error('❌ Failed to connect to MongoDB:', err.message);
     throw err;
   }
 }
@@ -69,6 +74,10 @@ export function isMongoConnected() {
 
 export function getMongoDb() {
   return db;
+}
+
+export function getMongoError() {
+  return lastError;
 }
 
 /**
@@ -278,10 +287,10 @@ export const mongoIdempotency = {
  * Cloud persistence statistics
  */
 export async function mongoLedgerStats() {
-  if (!db) {
+  if (!db || !isConnected) {
     return {
       connected: false,
-      engine: 'MongoDB Atlas (Disconnected)',
+      engine: lastError ? `MongoDB Atlas (Disconnected — ${lastError})` : 'MongoDB Atlas (Disconnected)',
       ledgerEntries: 0,
       persistedEntities: 0,
       collections: {},

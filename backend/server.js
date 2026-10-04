@@ -34,16 +34,40 @@ const hash = (pw) => crypto.createHash('sha256').update('co-salt::' + pw).digest
 db.users.forEach(u => { if (u.password) { u.passwordHash = hash(u.password); delete u.password; } });
 await initPersistence(db);
 
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    if (res.statusCode >= 400 || req.originalUrl.startsWith('/api/auth')) {
+      console.log(`[HTTP] ${req.method} ${req.originalUrl} ${res.statusCode} (${Date.now() - start}ms)`);
+    }
+  });
+  next();
+});
+
 const sign = (u) => jwt.sign({ id: u.id, role: u.role, operatorId: u.operatorId || null }, JWT_SECRET, { expiresIn: '12h' });
 const authRequired = (roles) => (req, res, next) => {
   try {
-    const tok = (req.headers.authorization || '').replace('Bearer ', '');
+    const rawTok = req.headers.authorization || '';
+    if (!rawTok) {
+      console.warn(`⚠️ [Auth 401] Missing Authorization header: ${req.method} ${req.originalUrl}`);
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    const tok = rawTok.replace(/^Bearer\s+/i, '').trim();
     const p = jwt.verify(tok, JWT_SECRET);
     req.user = db.users.find(u => u.id === p.id);
-    if (!req.user) throw new Error();
-    if (roles && !roles.includes(req.user.role)) return res.status(403).json({ error: 'Forbidden for role ' + req.user.role });
+    if (!req.user) {
+      console.warn(`⚠️ [Auth 401] User ID "${p.id}" from token not found in user store: ${req.method} ${req.originalUrl}`);
+      return res.status(401).json({ error: 'Session expired. Please sign in again.' });
+    }
+    if (roles && !roles.includes(req.user.role)) {
+      console.warn(`⚠️ [Auth 403] Role "${req.user.role}" forbidden for ${req.method} ${req.originalUrl}`);
+      return res.status(403).json({ error: 'Forbidden for role ' + req.user.role });
+    }
     next();
-  } catch { res.status(401).json({ error: 'Authentication required' }); }
+  } catch (err) {
+    console.warn(`⚠️ [Auth 401] JWT verification failed on ${req.method} ${req.originalUrl}:`, err.message);
+    res.status(401).json({ error: 'Authentication required' });
+  }
 };
 const safeUser = (u) => ({ id: u.id, name: u.name, email: u.email, role: u.role, phone: u.phone, city: u.city, joined: u.joined, status: u.status, walletBalance: u.walletBalance, operatorId: u.operatorId || null });
 
@@ -51,18 +75,44 @@ const safeUser = (u) => ({ id: u.id, name: u.name, email: u.email, role: u.role,
 app.post('/api/auth/register', (req, res) => {
   const { name, email, password, phone } = req.body || {};
   if (!name || !email || !password || password.length < 6) return res.status(400).json({ error: 'Name, email and password (6+ chars) are required' });
-  if (db.users.some(u => u.email.toLowerCase() === String(email).toLowerCase())) return res.status(409).json({ error: 'An account with this email already exists' });
-  const u = { id: 'USR_' + Math.floor(2000 + Math.random() * 8000), name, email, passwordHash: hash(password), role: 'USER', phone: phone || '', city: 'Mumbai', joined: new Date().toISOString().slice(0, 10), status: 'ACTIVE', walletBalance: 0 };
+  const cleanEmail = String(email).trim().toLowerCase();
+  if (db.users.some(u => u.email.toLowerCase().trim() === cleanEmail)) return res.status(409).json({ error: 'An account with this email already exists' });
+  const u = { id: 'USR_' + Math.floor(2000 + Math.random() * 8000), name: String(name).trim(), email: cleanEmail, passwordHash: hash(String(password).trim()), role: 'USER', phone: phone || '', city: 'Mumbai', joined: new Date().toISOString().slice(0, 10), status: 'ACTIVE', walletBalance: 0 };
   db.users.push(u);
   save('users', u);
   audit('USER', u.id, null, 'ACTIVE', 'User registered');
   res.json({ token: sign(u), user: safeUser(u) });
 });
+
 app.post('/api/auth/login', (req, res) => {
   const { email, password } = req.body || {};
-  const u = db.users.find(x => x.email.toLowerCase() === String(email || '').toLowerCase());
-  if (!u || u.passwordHash !== hash(password || '')) return res.status(401).json({ error: 'Invalid email or password' });
+  const cleanEmail = String(email || '').trim().toLowerCase();
+  const rawPw = String(password || '');
+  const trimmedPw = rawPw.trim();
+
+  const u = db.users.find(x => x.email.toLowerCase().trim() === cleanEmail);
+  if (!u) {
+    console.warn(`⚠️ [Login 401] User not found for email: "${cleanEmail}"`);
+    return res.status(401).json({ error: 'Invalid email or password' });
+  }
+
+  // Ensure user has a valid passwordHash
+  if (!u.passwordHash && u.password) {
+    u.passwordHash = hash(u.password);
+    delete u.password;
+  }
+
+  const matches = (u.passwordHash === hash(rawPw)) ||
+                  (trimmedPw && u.passwordHash === hash(trimmedPw)) ||
+                  (u.password && (u.password === rawPw || u.password === trimmedPw));
+
+  if (!matches) {
+    console.warn(`⚠️ [Login 401] Password mismatch for email: "${cleanEmail}"`);
+    return res.status(401).json({ error: 'Invalid email or password' });
+  }
+
   if (u.status === 'SUSPENDED') return res.status(403).json({ error: 'Account suspended. Contact support.' });
+  console.log(`✅ [Login] User "${u.email}" (${u.role}) successfully authenticated`);
   res.json({ token: sign(u), user: safeUser(u) });
 });
 app.post('/api/auth/logout', (_req, res) => res.json({ ok: true }));
